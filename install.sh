@@ -1,7 +1,5 @@
 #!/bin/bash
 # Codex Account Switcher - One-Command Installer
-# Run: curl -fsSL https://raw.githubusercontent.com/USERNAME/codex-account-switcher/main/install.sh | bash
-
 set -e
 
 echo "🚀 Codex Account Switcher - Installing..."
@@ -28,7 +26,7 @@ echo "📝 Generating extension files..."
 
 # Package.json
 cat > package.json << 'PKG'
-{"name":"codex-account-switcher","displayName":"Codex Account Switcher","version":"1.0.0","publisher":"codex-tools","engines":{"vscode":"^1.85.0"},"main":"./dist/extension.js","activationEvents":["onView:codexAccountSwitcher"],"contributes":{"viewsContainers":{"activitybar":[{"id":"codex-switcher","title":"Codex Switcher","icon":"media/icon.svg"}]},"views":{"codex-switcher":[{"type":"webview","id":"codexAccountSwitcher","name":"Accounts"}]},"commands":[{"command":"codex-switcher.import","title":"Import Account","category":"Codex"}]},"scripts":{"compile":"webpack --mode production"},"devDependencies":{"@types/vscode":"^1.85.0","@types/node":"20.x","typescript":"^5.3.3","webpack":"^5.89.0","webpack-cli":"^5.1.4","ts-loader":"^9.5.1"}}
+{"name":"codex-account-switcher","displayName":"Codex Account Switcher","version":"1.0.0","publisher":"codex-tools","engines":{"vscode":"^1.85.0"},"main":"./dist/extension.js","activationEvents":[],"contributes":{"viewsContainers":{"activitybar":[{"id":"codex-switcher","title":"Codex Switcher","icon":"media/icon.svg"}]},"views":{"codex-switcher":[{"type":"webview","id":"codexAccountSwitcher","name":"Accounts"}]},"commands":[{"command":"codex-switcher.import","title":"Import Account","category":"Codex"}]},"scripts":{"compile":"webpack --mode production"},"devDependencies":{"@types/vscode":"^1.85.0","@types/node":"20.x","typescript":"^5.3.3","webpack":"^5.89.0","webpack-cli":"^5.1.4","ts-loader":"^9.5.1"}}
 PKG
 
 # TypeScript config
@@ -41,19 +39,29 @@ cat > webpack.config.js << 'WPC'
 const path=require('path');module.exports={target:'node',mode:'production',entry:'./src/extension.ts',output:{path:path.resolve(__dirname,'dist'),filename:'extension.js',libraryTarget:'commonjs2'},externals:{vscode:'commonjs vscode'},resolve:{extensions:['.ts','.js']},module:{rules:[{test:/\.ts$/,exclude:/node_modules/,use:[{loader:'ts-loader'}]}]}};
 WPC
 
-# Extension code (simplified but fully functional)
+# Extension code - FIXED escaping issues
 cat > src/extension.ts << 'EXT'
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 
-interface Account { id: string; name: string; email?: string; isActive: boolean; authData: any; }
+interface Account { 
+    id: string; 
+    name: string; 
+    email?: string; 
+    isActive: boolean; 
+    authData: any; 
+}
 
 export function activate(ctx: vscode.ExtensionContext) {
     const provider = new AccountProvider(ctx.extensionUri, ctx);
-    ctx.subscriptions.push(vscode.window.registerWebviewViewProvider('codexAccountSwitcher', provider));
-    ctx.subscriptions.push(vscode.commands.registerCommand('codex-switcher.import', () => provider.importAccount()));
+    ctx.subscriptions.push(
+        vscode.window.registerWebviewViewProvider('codexAccountSwitcher', provider)
+    );
+    ctx.subscriptions.push(
+        vscode.commands.registerCommand('codex-switcher.import', () => provider.importAccount())
+    );
 }
 
 class AccountProvider implements vscode.WebviewViewProvider {
@@ -65,17 +73,24 @@ class AccountProvider implements vscode.WebviewViewProvider {
     constructor(private uri: vscode.Uri, ctx: vscode.ExtensionContext) {
         this.codexPath = path.join(os.homedir(), '.codex');
         this.accountsPath = path.join(ctx.globalStorageUri.fsPath, 'accounts');
-        if (!fs.existsSync(this.accountsPath)) fs.mkdirSync(this.accountsPath, { recursive: true });
+        if (!fs.existsSync(this.accountsPath)) {
+            fs.mkdirSync(this.accountsPath, { recursive: true });
+        }
         this.load();
     }
 
     private load() {
         const file = path.join(this.accountsPath, 'accounts.json');
-        if (fs.existsSync(file)) this.accounts = JSON.parse(fs.readFileSync(file, 'utf8'));
+        if (fs.existsSync(file)) {
+            this.accounts = JSON.parse(fs.readFileSync(file, 'utf8'));
+        }
     }
 
     private save() {
-        fs.writeFileSync(path.join(this.accountsPath, 'accounts.json'), JSON.stringify(this.accounts, null, 2));
+        fs.writeFileSync(
+            path.join(this.accountsPath, 'accounts.json'), 
+            JSON.stringify(this.accounts, null, 2)
+        );
     }
 
     resolveWebviewView(v: vscode.WebviewView) {
@@ -87,10 +102,15 @@ class AccountProvider implements vscode.WebviewViewProvider {
     }
 
     private async handleMessage(m: any) {
-        if (m.cmd === 'import') await this.importAccount();
-        else if (m.cmd === 'switch') await this.switchAccount(m.id);
-        else if (m.cmd === 'delete') await this.deleteAccount(m.id);
-        else if (m.cmd === 'rename') await this.renameAccount(m.id, m.name);
+        if (m.cmd === 'import') {
+            await this.importAccount();
+        } else if (m.cmd === 'switch') {
+            await this.switchAccount(m.id);
+        } else if (m.cmd === 'delete') {
+            await this.deleteAccount(m.id);
+        } else if (m.cmd === 'rename') {
+            await this.renameAccount(m.id, m.name);
+        }
     }
 
     async importAccount() {
@@ -118,11 +138,11 @@ class AccountProvider implements vscode.WebviewViewProvider {
                     authData
                 });
                 this.save();
-                vscode.window.showInformationMessage(\`✅ Account "\${name}" imported!\`);
+                vscode.window.showInformationMessage('Account "' + name + '" imported!');
                 this.update();
             }
         } catch (err) {
-            vscode.window.showErrorMessage(\`Failed to import: \${err}\`);
+            vscode.window.showErrorMessage('Failed to import: ' + err);
         }
     }
 
@@ -133,31 +153,28 @@ class AccountProvider implements vscode.WebviewViewProvider {
         try {
             const authPath = path.join(this.codexPath, 'auth.json');
 
-            // Backup current auth if exists
             if (fs.existsSync(authPath)) {
-                const backupPath = path.join(this.accountsPath, \`backup_\${Date.now()}.json\`);
+                const backupPath = path.join(this.accountsPath, 'backup_' + Date.now() + '.json');
                 fs.copyFileSync(authPath, backupPath);
             }
 
-            // Write new auth
             fs.writeFileSync(authPath, JSON.stringify(account.authData, null, 2));
 
-            // Update status
             this.accounts.forEach(a => a.isActive = false);
             account.isActive = true;
             this.save();
 
-            vscode.window.showInformationMessage(\`✅ Switched to: \${account.name}\`);
+            vscode.window.showInformationMessage('Switched to: ' + account.name);
             this.update();
         } catch (err) {
-            vscode.window.showErrorMessage(\`Failed to switch: \${err}\`);
+            vscode.window.showErrorMessage('Failed to switch: ' + err);
         }
     }
 
     async deleteAccount(id: string) {
         const account = this.accounts.find(a => a.id === id);
         const confirm = await vscode.window.showWarningMessage(
-            \`Delete "\${account?.name}"?\`,
+            'Delete "' + (account?.name || 'account') + '"?',
             'Delete', 'Cancel'
         );
 
@@ -179,11 +196,13 @@ class AccountProvider implements vscode.WebviewViewProvider {
     }
 
     private update() {
-        if (this.view) this.view.webview.postMessage({ accounts: this.accounts });
+        if (this.view) {
+            this.view.webview.postMessage({ accounts: this.accounts });
+        }
     }
 
     private getHtml() {
-        return \`<!DOCTYPE html>
+        const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -287,19 +306,23 @@ class AccountProvider implements vscode.WebviewViewProvider {
                 return;
             }
 
-            container.innerHTML = accounts.map(a => \\`
-                <div class="card \\${a.isActive ? 'active' : ''}" onclick="switchAccount('\\${a.id}')">
-                    <div class="card-header">
-                        <span class="card-name">\\${a.name}</span>
-                        \\${a.isActive ? '<span class="status-badge">ACTIVE</span>' : ''}
-                    </div>
-                    \\${a.email ? \\`<div class="card-email">📧 \\${a.email}</div>\\` : ''}
-                    <div class="card-actions" onclick="event.stopPropagation()">
-                        <button class="secondary" onclick="renameAccount('\\${a.id}')">Rename</button>
-                        <button class="danger" onclick="deleteAccount('\\${a.id}')">Delete</button>
-                    </div>
-                </div>
-            \\`).join('');
+            container.innerHTML = accounts.map(a => {
+                const activeClass = a.isActive ? 'active' : '';
+                const statusBadge = a.isActive ? '<span class="status-badge">ACTIVE</span>' : '';
+                const emailDiv = a.email ? '<div class="card-email">📧 ' + a.email + '</div>' : '';
+
+                return '<div class="card ' + activeClass + '" onclick="switchAccount(\'' + a.id + '\')">' +
+                    '<div class="card-header">' +
+                        '<span class="card-name">' + a.name + '</span>' +
+                        statusBadge +
+                    '</div>' +
+                    emailDiv +
+                    '<div class="card-actions" onclick="event.stopPropagation()">' +
+                        '<button class="secondary" onclick="renameAccount(\'' + a.id + '\')">Rename</button>' +
+                        '<button class="danger" onclick="deleteAccount(\'' + a.id + '\')">Delete</button>' +
+                    '</div>' +
+                '</div>';
+            }).join('');
         }
 
         function importAccount() {
@@ -307,23 +330,24 @@ class AccountProvider implements vscode.WebviewViewProvider {
         }
 
         function switchAccount(id) {
-            vscode.postMessage({ cmd: 'switch', id });
+            vscode.postMessage({ cmd: 'switch', id: id });
         }
 
         function deleteAccount(id) {
-            vscode.postMessage({ cmd: 'delete', id });
+            vscode.postMessage({ cmd: 'delete', id: id });
         }
 
         function renameAccount(id) {
             const account = accounts.find(a => a.id === id);
-            const newName = prompt('New name:', account?.name);
-            if (newName && newName !== account?.name) {
-                vscode.postMessage({ cmd: 'rename', id, name: newName });
+            const newName = prompt('New name:', account ? account.name : '');
+            if (newName && account && newName !== account.name) {
+                vscode.postMessage({ cmd: 'rename', id: id, name: newName });
             }
         }
     </script>
 </body>
-</html>\`;
+</html>`;
+        return html;
     }
 }
 
@@ -346,10 +370,10 @@ echo "📦 Installing vsce..."
 npm install -g @vscode/vsce --silent 2>&1 || true
 
 echo "🔨 Building extension..."
-npm run compile 2>&1 | grep -E "ERROR|WARNING" || echo "✓ Compiled"
+npm run compile 2>&1 | grep -E "ERROR|WARNING" || echo "✓ Compiled successfully"
 
 echo "📦 Packaging..."
-VSIX_OUTPUT=$(vsce package --no-yarn 2>&1 || npx @vscode/vsce package --no-yarn 2>&1)
+vsce package --no-yarn 2>&1 || npx @vscode/vsce package --no-yarn 2>&1
 
 # Find and move the .vsix file
 VSIX_FILE=$(ls *.vsix 2>/dev/null | head -1)
@@ -364,24 +388,22 @@ if [ -n "$VSIX_FILE" ]; then
         echo "🚀 Installing in VS Code..."
         if code --install-extension ~/"$VSIX_FILE" 2>&1 | grep -q "successfully installed"; then
             echo "✅ Installation complete!"
-            echo "   Look for the Codex icon in your Activity Bar (left sidebar)"
+            echo ""
+            echo "🎉 Setup complete!"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "   1. Open VS Code"
+            echo "   2. Click the Codex icon in the Activity Bar"
+            echo "   3. Import your auth.json files"
+            echo "   4. Switch accounts with one click!"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         else
             echo "📝 Manual install: code --install-extension ~/$VSIX_FILE"
         fi
     else
         echo "📝 Install manually: code --install-extension ~/$VSIX_FILE"
     fi
-
-    echo ""
-    echo "🎉 Setup complete!"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "   1. Open VS Code"
-    echo "   2. Click the Codex icon in the Activity Bar"
-    echo "   3. Import your auth.json files"
-    echo "   4. Switch accounts with one click!"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 else
-    echo "❌ Build failed. Check errors above."
+    echo "❌ Build failed. Please report this issue."
     exit 1
 fi
 
