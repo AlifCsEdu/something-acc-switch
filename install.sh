@@ -24,19 +24,136 @@ cd codex-switcher
 
 echo "📝 Generating extension files..."
 
-# Package.json
+# Package.json with repository field to avoid warning
 cat > package.json << 'PKG'
-{"name":"codex-account-switcher","displayName":"Codex Account Switcher","version":"1.0.0","publisher":"codex-tools","engines":{"vscode":"^1.85.0"},"main":"./dist/extension.js","activationEvents":[],"contributes":{"viewsContainers":{"activitybar":[{"id":"codex-switcher","title":"Codex Switcher","icon":"media/icon.svg"}]},"views":{"codex-switcher":[{"type":"webview","id":"codexAccountSwitcher","name":"Accounts"}]},"commands":[{"command":"codex-switcher.import","title":"Import Account","category":"Codex"}]},"scripts":{"compile":"webpack --mode production"},"devDependencies":{"@types/vscode":"^1.85.0","@types/node":"20.x","typescript":"^5.3.3","webpack":"^5.89.0","webpack-cli":"^5.1.4","ts-loader":"^9.5.1"}}
+{
+  "name": "codex-account-switcher",
+  "displayName": "Codex Account Switcher",
+  "description": "Manage and switch between multiple ChatGPT Plus accounts for OpenAI Codex",
+  "version": "1.0.0",
+  "publisher": "codex-tools",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/efemradiyow/codex-account-switcher"
+  },
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "main": "./dist/extension.js",
+  "activationEvents": [],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "codex-switcher",
+          "title": "Codex Switcher",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "codex-switcher": [
+        {
+          "type": "webview",
+          "id": "codexAccountSwitcher",
+          "name": "Accounts"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "codex-switcher.import",
+        "title": "Import Account",
+        "category": "Codex"
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "webpack --mode production"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@types/node": "20.x",
+    "typescript": "^5.3.3",
+    "webpack": "^5.89.0",
+    "webpack-cli": "^5.1.4",
+    "ts-loader": "^9.5.1"
+  }
+}
 PKG
+
+# Create LICENSE file
+cat > LICENSE << 'LIC'
+MIT License
+
+Copyright (c) 2025 Codex Account Switcher
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+LIC
 
 # TypeScript config
 cat > tsconfig.json << 'TSC'
-{"compilerOptions":{"module":"commonjs","target":"ES2020","outDir":"./dist","lib":["ES2020"],"sourceMap":true,"rootDir":"./src","strict":true},"include":["src/**/*"]}
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "target": "ES2020",
+    "outDir": "./dist",
+    "lib": ["ES2020"],
+    "sourceMap": true,
+    "rootDir": "./src",
+    "strict": true
+  },
+  "include": ["src/**/*"]
+}
 TSC
 
 # Webpack config
 cat > webpack.config.js << 'WPC'
-const path=require('path');module.exports={target:'node',mode:'production',entry:'./src/extension.ts',output:{path:path.resolve(__dirname,'dist'),filename:'extension.js',libraryTarget:'commonjs2'},externals:{vscode:'commonjs vscode'},resolve:{extensions:['.ts','.js']},module:{rules:[{test:/\.ts$/,exclude:/node_modules/,use:[{loader:'ts-loader'}]}]}};
+const path = require('path');
+module.exports = {
+  target: 'node',
+  mode: 'production',
+  entry: './src/extension.ts',
+  output: {
+    path: path.resolve(__dirname, 'dist'),
+    filename: 'extension.js',
+    libraryTarget: 'commonjs2'
+  },
+  externals: {
+    vscode: 'commonjs vscode'
+  },
+  resolve: {
+    extensions: ['.ts', '.js']
+  },
+  module: {
+    rules: [
+      {
+        test: /\.ts$/,
+        exclude: /node_modules/,
+        use: [{
+          loader: 'ts-loader'
+        }]
+      }
+    ]
+  }
+};
 WPC
 
 # Extension code
@@ -372,8 +489,9 @@ npm install -g @vscode/vsce --silent 2>&1 || true
 echo "🔨 Building extension..."
 npm run compile 2>&1 | grep -E "ERROR|WARNING" || echo "✓ Compiled successfully"
 
-echo "📦 Packaging..."
-vsce package --no-yarn --allow-missing-repository 2>&1 || npx @vscode/vsce package --no-yarn --allow-missing-repository 2>&1
+echo "📦 Packaging extension (this may take a moment)..."
+# Use vsce package with NO interactive prompts
+vsce package --no-yarn 2>&1 || npx @vscode/vsce package --no-yarn 2>&1
 
 # Find and move the .vsix file
 VSIX_FILE=$(ls *.vsix 2>/dev/null | head -1)
@@ -386,24 +504,25 @@ if [ -n "$VSIX_FILE" ]; then
     # Try to install automatically
     if command -v code &>/dev/null; then
         echo "🚀 Installing in VS Code..."
-        if code --install-extension ~/"$VSIX_FILE" 2>&1 | grep -q "successfully installed"; then
-            echo "✅ Installation complete!"
-            echo ""
-            echo "🎉 Setup complete!"
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "   1. Open VS Code"
-            echo "   2. Click the Codex icon in the Activity Bar"
-            echo "   3. Import your auth.json files"
-            echo "   4. Switch accounts with one click!"
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        else
-            echo "📝 Manual install: code --install-extension ~/$VSIX_FILE"
-        fi
+        code --install-extension ~/"$VSIX_FILE" --force 2>&1
+        echo ""
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "✅ Installation complete!"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+        echo "🎉 Next Steps:"
+        echo "   1. Open VS Code (or reload if already open)"
+        echo "   2. Click the Codex icon in the Activity Bar (left sidebar)"
+        echo "   3. Click '➕ Import Account'"
+        echo "   4. Select your auth.json files"
+        echo "   5. Switch accounts with one click!"
+        echo ""
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     else
         echo "📝 Install manually: code --install-extension ~/$VSIX_FILE"
     fi
 else
-    echo "❌ Build failed. Please report this issue."
+    echo "❌ Build failed. Please check errors above."
     exit 1
 fi
 
