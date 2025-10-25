@@ -39,7 +39,7 @@ cat > webpack.config.js << 'WPC'
 const path=require('path');module.exports={target:'node',mode:'production',entry:'./src/extension.ts',output:{path:path.resolve(__dirname,'dist'),filename:'extension.js',libraryTarget:'commonjs2'},externals:{vscode:'commonjs vscode'},resolve:{extensions:['.ts','.js']},module:{rules:[{test:/\.ts$/,exclude:/node_modules/,use:[{loader:'ts-loader'}]}]}};
 WPC
 
-# Extension code - FIXED escaping issues
+# Extension code
 cat > src/extension.ts << 'EXT'
 import * as vscode from 'vscode';
 import * as fs from 'fs';
@@ -373,7 +373,7 @@ echo "🔨 Building extension..."
 npm run compile 2>&1 | grep -E "ERROR|WARNING" || echo "✓ Compiled successfully"
 
 echo "📦 Packaging..."
-vsce package --no-yarn 2>&1 || npx @vscode/vsce package --no-yarn 2>&1
+vsce package --no-yarn --allow-missing-repository 2>&1 || npx @vscode/vsce package --no-yarn --allow-missing-repository 2>&1
 
 # Find and move the .vsix file
 VSIX_FILE=$(ls *.vsix 2>/dev/null | head -1)
