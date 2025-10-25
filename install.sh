@@ -24,7 +24,7 @@ cd codex-switcher
 
 echo "📝 Generating extension files..."
 
-# Package.json with repository field to avoid warning
+# Package.json
 cat > package.json << 'PKG'
 {
   "name": "codex-account-switcher",
@@ -236,7 +236,7 @@ class AccountProvider implements vscode.WebviewViewProvider {
             canSelectMany: false
         });
         if (!files?.[0]) return;
-
+        
         try {
             const content = fs.readFileSync(files[0].fsPath, 'utf8');
             const authData = JSON.parse(content);
@@ -245,7 +245,7 @@ class AccountProvider implements vscode.WebviewViewProvider {
                 prompt: 'Account name', 
                 value: fileName 
             });
-
+            
             if (name) {
                 this.accounts.push({
                     id: Date.now().toString(36) + Math.random().toString(36).substr(2),
@@ -266,21 +266,21 @@ class AccountProvider implements vscode.WebviewViewProvider {
     async switchAccount(id: string) {
         const account = this.accounts.find(a => a.id === id);
         if (!account) return;
-
+        
         try {
             const authPath = path.join(this.codexPath, 'auth.json');
-
+            
             if (fs.existsSync(authPath)) {
                 const backupPath = path.join(this.accountsPath, 'backup_' + Date.now() + '.json');
                 fs.copyFileSync(authPath, backupPath);
             }
-
+            
             fs.writeFileSync(authPath, JSON.stringify(account.authData, null, 2));
-
+            
             this.accounts.forEach(a => a.isActive = false);
             account.isActive = true;
             this.save();
-
+            
             vscode.window.showInformationMessage('Switched to: ' + account.name);
             this.update();
         } catch (err) {
@@ -294,7 +294,7 @@ class AccountProvider implements vscode.WebviewViewProvider {
             'Delete "' + (account?.name || 'account') + '"?',
             'Delete', 'Cancel'
         );
-
+        
         if (confirm === 'Delete') {
             this.accounts = this.accounts.filter(a => a.id !== id);
             this.save();
@@ -319,152 +319,7 @@ class AccountProvider implements vscode.WebviewViewProvider {
     }
 
     private getHtml() {
-        const html = `<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { 
-            font-family: var(--vscode-font-family); 
-            color: var(--vscode-foreground); 
-            background: var(--vscode-sideBar-background); 
-            padding: 16px; 
-        }
-        h2 { font-size: 16px; margin-bottom: 16px; font-weight: 600; }
-        button { 
-            background: var(--vscode-button-background); 
-            color: var(--vscode-button-foreground); 
-            border: none; 
-            padding: 8px 16px; 
-            border-radius: 4px; 
-            cursor: pointer; 
-            font-size: 13px;
-            margin: 4px 4px 4px 0;
-            transition: background 0.2s;
-        }
-        button:hover { background: var(--vscode-button-hoverBackground); }
-        button.secondary {
-            background: var(--vscode-button-secondaryBackground);
-            color: var(--vscode-button-secondaryForeground);
-        }
-        button.danger { background: #f14c4c; color: white; }
-        .card { 
-            background: var(--vscode-sideBar-dropBackground); 
-            border: 1px solid var(--vscode-panel-border); 
-            border-radius: 6px; 
-            padding: 12px; 
-            margin: 8px 0; 
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-        .card:hover { 
-            background: var(--vscode-list-hoverBackground); 
-            border-color: var(--vscode-focusBorder);
-        }
-        .card.active { 
-            border: 2px solid var(--vscode-focusBorder); 
-            background: var(--vscode-list-activeSelectionBackground);
-        }
-        .card-header { 
-            display: flex; 
-            justify-content: space-between; 
-            align-items: center;
-            margin-bottom: 8px;
-        }
-        .card-name { font-weight: 600; font-size: 14px; }
-        .card-email { font-size: 12px; color: var(--vscode-descriptionForeground); margin-bottom: 8px; }
-        .card-actions { display: flex; gap: 4px; margin-top: 8px; }
-        .status-badge {
-            font-size: 10px;
-            padding: 2px 8px;
-            border-radius: 12px;
-            background: var(--vscode-badge-background);
-            color: var(--vscode-badge-foreground);
-        }
-        .empty { 
-            text-align: center; 
-            padding: 32px 16px; 
-            color: var(--vscode-descriptionForeground);
-        }
-        .info { 
-            background: var(--vscode-textCodeBlock-background);
-            border-left: 3px solid var(--vscode-focusBorder);
-            padding: 12px;
-            border-radius: 4px;
-            font-size: 12px;
-            margin-bottom: 16px;
-        }
-    </style>
-</head>
-<body>
-    <h2>🔄 Codex Account Switcher</h2>
-    <div class="info">
-        Manage multiple ChatGPT Plus accounts for Codex CLI
-    </div>
-    <button onclick="importAccount()">➕ Import Account</button>
-    <div id="accounts"></div>
-
-    <script>
-        const vscode = acquireVsCodeApi();
-        let accounts = [];
-
-        window.addEventListener('message', event => {
-            accounts = event.data.accounts || [];
-            renderAccounts();
-        });
-
-        function renderAccounts() {
-            const container = document.getElementById('accounts');
-
-            if (!accounts.length) {
-                container.innerHTML = '<div class="empty">📦 No accounts yet<br><small>Click "Import Account" to get started</small></div>';
-                return;
-            }
-
-            container.innerHTML = accounts.map(a => {
-                const activeClass = a.isActive ? 'active' : '';
-                const statusBadge = a.isActive ? '<span class="status-badge">ACTIVE</span>' : '';
-                const emailDiv = a.email ? '<div class="card-email">📧 ' + a.email + '</div>' : '';
-
-                return '<div class="card ' + activeClass + '" onclick="switchAccount(\'' + a.id + '\')">' +
-                    '<div class="card-header">' +
-                        '<span class="card-name">' + a.name + '</span>' +
-                        statusBadge +
-                    '</div>' +
-                    emailDiv +
-                    '<div class="card-actions" onclick="event.stopPropagation()">' +
-                        '<button class="secondary" onclick="renameAccount(\'' + a.id + '\')">Rename</button>' +
-                        '<button class="danger" onclick="deleteAccount(\'' + a.id + '\')">Delete</button>' +
-                    '</div>' +
-                '</div>';
-            }).join('');
-        }
-
-        function importAccount() {
-            vscode.postMessage({ cmd: 'import' });
-        }
-
-        function switchAccount(id) {
-            vscode.postMessage({ cmd: 'switch', id: id });
-        }
-
-        function deleteAccount(id) {
-            vscode.postMessage({ cmd: 'delete', id: id });
-        }
-
-        function renameAccount(id) {
-            const account = accounts.find(a => a.id === id);
-            const newName = prompt('New name:', account ? account.name : '');
-            if (newName && account && newName !== account.name) {
-                vscode.postMessage({ cmd: 'rename', id: id, name: newName });
-            }
-        }
-    </script>
-</body>
-</html>`;
-        return html;
+        return '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:var(--vscode-font-family);color:var(--vscode-foreground);background:var(--vscode-sideBar-background);padding:16px}h2{font-size:16px;margin-bottom:16px;font-weight:600}button{background:var(--vscode-button-background);color:var(--vscode-button-foreground);border:none;padding:8px 16px;border-radius:4px;cursor:pointer;font-size:13px;margin:4px 4px 4px 0;transition:background .2s}button:hover{background:var(--vscode-button-hoverBackground)}button.secondary{background:var(--vscode-button-secondaryBackground);color:var(--vscode-button-secondaryForeground)}button.danger{background:#f14c4c;color:#fff}.card{background:var(--vscode-sideBar-dropBackground);border:1px solid var(--vscode-panel-border);border-radius:6px;padding:12px;margin:8px 0;cursor:pointer;transition:all .2s}.card:hover{background:var(--vscode-list-hoverBackground);border-color:var(--vscode-focusBorder)}.card.active{border:2px solid var(--vscode-focusBorder);background:var(--vscode-list-activeSelectionBackground)}.card-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}.card-name{font-weight:600;font-size:14px}.card-email{font-size:12px;color:var(--vscode-descriptionForeground);margin-bottom:8px}.card-actions{display:flex;gap:4px;margin-top:8px}.status-badge{font-size:10px;padding:2px 8px;border-radius:12px;background:var(--vscode-badge-background);color:var(--vscode-badge-foreground)}.empty{text-align:center;padding:32px 16px;color:var(--vscode-descriptionForeground)}.info{background:var(--vscode-textCodeBlock-background);border-left:3px solid var(--vscode-focusBorder);padding:12px;border-radius:4px;font-size:12px;margin-bottom:16px}</style></head><body><h2>🔄 Codex Account Switcher</h2><div class="info">Manage multiple ChatGPT Plus accounts for Codex CLI</div><button onclick="importAccount()">➕ Import Account</button><div id="accounts"></div><script>const vscode=acquireVsCodeApi();let accounts=[];window.addEventListener("message",e=>{accounts=e.data.accounts||[];renderAccounts()});function renderAccounts(){const c=document.getElementById("accounts");if(!accounts.length){c.innerHTML=\'<div class="empty">📦 No accounts yet<br><small>Click "Import Account" to get started</small></div>\';return}c.innerHTML=accounts.map(a=>{const ac=a.isActive?"active":"";const sb=a.isActive?\'<span class="status-badge">ACTIVE</span>\':"";const ed=a.email?\'<div class="card-email">📧 \'+a.email+"</div>":"";return\'<div class="card \'+ac+\'" onclick="switchAccount(\\\'\'+a.id+\'\\\')"><div class="card-header"><span class="card-name">\'+a.name+"</span>"+sb+\'</div>\'+ed+\'<div class="card-actions" onclick="event.stopPropagation()"><button class="secondary" onclick="renameAccount(\\\'\'+a.id+\'\\\')">Rename</button><button class="danger" onclick="deleteAccount(\\\'\'+a.id+\'\\\')">Delete</button></div></div>\'}).join("")}function importAccount(){vscode.postMessage({cmd:"import"})}function switchAccount(id){vscode.postMessage({cmd:"switch",id:id})}function deleteAccount(id){vscode.postMessage({cmd:"delete",id:id})}function renameAccount(id){const a=accounts.find(x=>x.id===id);const n=prompt("New name:",a?a.name:"");if(n&&a&&n!==a.name){vscode.postMessage({cmd:"rename",id:id,name:n})}}</script></body></html>';
     }
 }
 
@@ -489,19 +344,16 @@ npm install -g @vscode/vsce --silent 2>&1 || true
 echo "🔨 Building extension..."
 npm run compile 2>&1 | grep -E "ERROR|WARNING" || echo "✓ Compiled successfully"
 
-echo "📦 Packaging extension (this may take a moment)..."
-# Use vsce package with NO interactive prompts
+echo "📦 Packaging extension..."
 vsce package --no-yarn 2>&1 || npx @vscode/vsce package --no-yarn 2>&1
 
-# Find and move the .vsix file
 VSIX_FILE=$(ls *.vsix 2>/dev/null | head -1)
 
 if [ -n "$VSIX_FILE" ]; then
     cp "$VSIX_FILE" ~/
     echo ""
     echo "✅ Extension packaged: ~/$VSIX_FILE"
-
-    # Try to install automatically
+    
     if command -v code &>/dev/null; then
         echo "🚀 Installing in VS Code..."
         code --install-extension ~/"$VSIX_FILE" --force 2>&1
@@ -512,19 +364,18 @@ if [ -n "$VSIX_FILE" ]; then
         echo ""
         echo "🎉 Next Steps:"
         echo "   1. Open VS Code (or reload if already open)"
-        echo "   2. Click the Codex icon in the Activity Bar (left sidebar)"
+        echo "   2. Click the Codex icon in the Activity Bar"
         echo "   3. Click '➕ Import Account'"
         echo "   4. Select your auth.json files"
         echo "   5. Switch accounts with one click!"
         echo ""
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     else
-        echo "📝 Install manually: code --install-extension ~/$VSIX_FILE"
+        echo "📝 Install: code --install-extension ~/$VSIX_FILE"
     fi
 else
-    echo "❌ Build failed. Please check errors above."
+    echo "❌ Build failed"
     exit 1
 fi
 
-# Cleanup
 cd ~ && rm -rf "$TEMP_DIR"
