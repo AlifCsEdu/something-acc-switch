@@ -1,8 +1,10 @@
 #!/bin/bash
-# Codex Account Switcher - One-Command Installer
+# Codex Account Switcher v2.0 - One-Command Installer
+# New Features: Status bar, tags, search, timestamps, quick commands!
 set -e
 
-echo "🚀 Codex Account Switcher - Installing..."
+echo "🚀 Codex Account Switcher v2.0 - Installing..."
+echo "   ✨ New: Status bar • Tags • Search • Timestamps"
 echo ""
 
 # Check Node.js
@@ -24,13 +26,13 @@ cd codex-switcher
 
 echo "📝 Generating extension files..."
 
-# Package.json
+# Enhanced Package.json with new commands
 cat > package.json << 'PKG'
 {
   "name": "codex-account-switcher",
   "displayName": "Codex Account Switcher",
-  "description": "Manage and switch between multiple ChatGPT Plus accounts for OpenAI Codex",
-  "version": "1.0.0",
+  "description": "Manage and switch between multiple ChatGPT Plus accounts for OpenAI Codex with tags, search, and quick commands",
+  "version": "2.0.0",
   "publisher": "codex-tools",
   "repository": {
     "type": "git",
@@ -66,8 +68,33 @@ cat > package.json << 'PKG'
         "command": "codex-switcher.import",
         "title": "Import Account",
         "category": "Codex"
+      },
+      {
+        "command": "codex-switcher.quickSwitch",
+        "title": "Quick Switch Account",
+        "category": "Codex"
+      },
+      {
+        "command": "codex-switcher.showInStatusBar",
+        "title": "Show Active Account in Status Bar",
+        "category": "Codex"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "Codex Account Switcher",
+      "properties": {
+        "codexSwitcher.showStatusBar": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show active account in status bar"
+        },
+        "codexSwitcher.defaultTag": {
+          "type": "string",
+          "default": "Personal",
+          "description": "Default tag for new accounts"
+        }
+      }
+    }
   },
   "scripts": {
     "compile": "webpack --mode production"
@@ -83,7 +110,7 @@ cat > package.json << 'PKG'
 }
 PKG
 
-# Create LICENSE file
+# Create LICENSE
 cat > LICENSE << 'LIC'
 MIT License
 
@@ -156,7 +183,7 @@ module.exports = {
 };
 WPC
 
-# Extension code
+# Enhanced Extension code with v2.0 features
 cat > src/extension.ts << 'EXT'
 import * as vscode from 'vscode';
 import * as fs from 'fs';
@@ -168,16 +195,38 @@ interface Account {
     name: string; 
     email?: string; 
     isActive: boolean; 
-    authData: any; 
+    authData: any;
+    tag?: string;
+    color?: string;
+    lastUsed?: number;
+    usageCount?: number;
 }
+
+const TAG_COLORS: {[key: string]: string} = {
+    'Work': '#007ACC',
+    'Personal': '#68217A',
+    'Client': '#F9A825',
+    'Testing': '#E91E63',
+    'Project': '#4CAF50'
+};
 
 export function activate(ctx: vscode.ExtensionContext) {
     const provider = new AccountProvider(ctx.extensionUri, ctx);
+    
     ctx.subscriptions.push(
         vscode.window.registerWebviewViewProvider('codexAccountSwitcher', provider)
     );
+    
     ctx.subscriptions.push(
         vscode.commands.registerCommand('codex-switcher.import', () => provider.importAccount())
+    );
+    
+    ctx.subscriptions.push(
+        vscode.commands.registerCommand('codex-switcher.quickSwitch', () => provider.quickSwitch())
+    );
+    
+    ctx.subscriptions.push(
+        vscode.commands.registerCommand('codex-switcher.showInStatusBar', () => provider.toggleStatusBar())
     );
 }
 
@@ -186,14 +235,21 @@ class AccountProvider implements vscode.WebviewViewProvider {
     private accounts: Account[] = [];
     private accountsPath: string;
     private codexPath: string;
+    private statusBarItem: vscode.StatusBarItem;
 
-    constructor(private uri: vscode.Uri, ctx: vscode.ExtensionContext) {
+    constructor(private uri: vscode.Uri, private ctx: vscode.ExtensionContext) {
         this.codexPath = path.join(os.homedir(), '.codex');
         this.accountsPath = path.join(ctx.globalStorageUri.fsPath, 'accounts');
         if (!fs.existsSync(this.accountsPath)) {
             fs.mkdirSync(this.accountsPath, { recursive: true });
         }
+        
+        this.statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+        this.statusBarItem.command = 'codex-switcher.quickSwitch';
+        ctx.subscriptions.push(this.statusBarItem);
+        
         this.load();
+        this.updateStatusBar();
     }
 
     private load() {
@@ -208,6 +264,40 @@ class AccountProvider implements vscode.WebviewViewProvider {
             path.join(this.accountsPath, 'accounts.json'), 
             JSON.stringify(this.accounts, null, 2)
         );
+    }
+
+    private updateStatusBar() {
+        const active = this.accounts.find(a => a.isActive);
+        if (active) {
+            this.statusBarItem.text = '$(account) ' + active.name;
+            this.statusBarItem.tooltip = 'Active Codex Account: ' + (active.email || active.name);
+            this.statusBarItem.show();
+        } else {
+            this.statusBarItem.hide();
+        }
+    }
+
+    private toggleStatusBar() {
+        const config = vscode.workspace.getConfiguration('codexSwitcher');
+        const current = config.get('showStatusBar', true);
+        config.update('showStatusBar', !current, vscode.ConfigurationTarget.Global);
+    }
+
+    async quickSwitch() {
+        const items = this.accounts.map(a => ({
+            label: a.name,
+            description: a.email || '',
+            detail: a.tag ? '$(tag) ' + a.tag : undefined,
+            account: a
+        }));
+        
+        const selected = await vscode.window.showQuickPick(items, {
+            placeHolder: 'Select account to switch to'
+        });
+        
+        if (selected) {
+            await this.switchAccount(selected.account.id);
+        }
     }
 
     resolveWebviewView(v: vscode.WebviewView) {
@@ -227,6 +317,10 @@ class AccountProvider implements vscode.WebviewViewProvider {
             await this.deleteAccount(m.id);
         } else if (m.cmd === 'rename') {
             await this.renameAccount(m.id, m.name);
+        } else if (m.cmd === 'updateTag') {
+            await this.updateTag(m.id, m.tag);
+        } else if (m.cmd === 'updateColor') {
+            await this.updateColor(m.id, m.color);
         }
     }
 
@@ -247,19 +341,28 @@ class AccountProvider implements vscode.WebviewViewProvider {
             });
             
             if (name) {
+                const tag = await vscode.window.showQuickPick(
+                    ['Work', 'Personal', 'Client', 'Testing', 'Project', 'Other'],
+                    { placeHolder: 'Select a tag (optional)' }
+                );
+                
                 this.accounts.push({
                     id: Date.now().toString(36) + Math.random().toString(36).substr(2),
                     name,
                     email: authData.email || authData.user?.email || authData.account?.email,
                     isActive: false,
-                    authData
+                    authData,
+                    tag: tag || 'Personal',
+                    color: TAG_COLORS[tag || 'Personal'],
+                    lastUsed: undefined,
+                    usageCount: 0
                 });
                 this.save();
-                vscode.window.showInformationMessage('Account "' + name + '" imported!');
+                vscode.window.showInformationMessage('✅ Account "' + name + '" imported!');
                 this.update();
             }
         } catch (err) {
-            vscode.window.showErrorMessage('Failed to import: ' + err);
+            vscode.window.showErrorMessage('❌ Failed to import: ' + err);
         }
     }
 
@@ -279,12 +382,15 @@ class AccountProvider implements vscode.WebviewViewProvider {
             
             this.accounts.forEach(a => a.isActive = false);
             account.isActive = true;
+            account.lastUsed = Date.now();
+            account.usageCount = (account.usageCount || 0) + 1;
             this.save();
             
-            vscode.window.showInformationMessage('Switched to: ' + account.name);
+            this.updateStatusBar();
+            vscode.window.showInformationMessage('✅ Switched to: ' + account.name);
             this.update();
         } catch (err) {
-            vscode.window.showErrorMessage('Failed to switch: ' + err);
+            vscode.window.showErrorMessage('❌ Failed to switch: ' + err);
         }
     }
 
@@ -298,7 +404,8 @@ class AccountProvider implements vscode.WebviewViewProvider {
         if (confirm === 'Delete') {
             this.accounts = this.accounts.filter(a => a.id !== id);
             this.save();
-            vscode.window.showInformationMessage('Account deleted');
+            this.updateStatusBar();
+            vscode.window.showInformationMessage('✅ Account deleted');
             this.update();
         }
     }
@@ -308,18 +415,52 @@ class AccountProvider implements vscode.WebviewViewProvider {
         if (account && newName) {
             account.name = newName;
             this.save();
+            this.updateStatusBar();
             this.update();
         }
     }
 
+    async updateTag(id: string, tag: string) {
+        const account = this.accounts.find(a => a.id === id);
+        if (account) {
+            account.tag = tag;
+            account.color = TAG_COLORS[tag];
+            this.save();
+            this.update();
+        }
+    }
+
+    async updateColor(id: string, color: string) {
+        const account = this.accounts.find(a => a.id === id);
+        if (account) {
+            account.color = color;
+            this.save();
+            this.update();
+        }
+    }
+
+    private formatRelativeTime(timestamp?: number): string {
+        if (!timestamp) return 'Never used';
+        const seconds = Math.floor((Date.now() - timestamp) / 1000);
+        if (seconds < 60) return 'Just now';
+        if (seconds < 3600) return Math.floor(seconds / 60) + 'm ago';
+        if (seconds < 86400) return Math.floor(seconds / 3600) + 'h ago';
+        return Math.floor(seconds / 86400) + 'd ago';
+    }
+
     private update() {
         if (this.view) {
-            this.view.webview.postMessage({ accounts: this.accounts });
+            this.view.webview.postMessage({ 
+                accounts: this.accounts.map(a => ({
+                    ...a,
+                    lastUsedText: this.formatRelativeTime(a.lastUsed)
+                }))
+            });
         }
     }
 
     private getHtml() {
-        return '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:var(--vscode-font-family);color:var(--vscode-foreground);background:var(--vscode-sideBar-background);padding:16px}h2{font-size:16px;margin-bottom:16px;font-weight:600}button{background:var(--vscode-button-background);color:var(--vscode-button-foreground);border:none;padding:8px 16px;border-radius:4px;cursor:pointer;font-size:13px;margin:4px 4px 4px 0;transition:background .2s}button:hover{background:var(--vscode-button-hoverBackground)}button.secondary{background:var(--vscode-button-secondaryBackground);color:var(--vscode-button-secondaryForeground)}button.danger{background:#f14c4c;color:#fff}.card{background:var(--vscode-sideBar-dropBackground);border:1px solid var(--vscode-panel-border);border-radius:6px;padding:12px;margin:8px 0;cursor:pointer;transition:all .2s}.card:hover{background:var(--vscode-list-hoverBackground);border-color:var(--vscode-focusBorder)}.card.active{border:2px solid var(--vscode-focusBorder);background:var(--vscode-list-activeSelectionBackground)}.card-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}.card-name{font-weight:600;font-size:14px}.card-email{font-size:12px;color:var(--vscode-descriptionForeground);margin-bottom:8px}.card-actions{display:flex;gap:4px;margin-top:8px}.status-badge{font-size:10px;padding:2px 8px;border-radius:12px;background:var(--vscode-badge-background);color:var(--vscode-badge-foreground)}.empty{text-align:center;padding:32px 16px;color:var(--vscode-descriptionForeground)}.info{background:var(--vscode-textCodeBlock-background);border-left:3px solid var(--vscode-focusBorder);padding:12px;border-radius:4px;font-size:12px;margin-bottom:16px}</style></head><body><h2>🔄 Codex Account Switcher</h2><div class="info">Manage multiple ChatGPT Plus accounts for Codex CLI</div><button onclick="importAccount()">➕ Import Account</button><div id="accounts"></div><script>const vscode=acquireVsCodeApi();let accounts=[];window.addEventListener("message",e=>{accounts=e.data.accounts||[];renderAccounts()});function renderAccounts(){const c=document.getElementById("accounts");if(!accounts.length){c.innerHTML=\'<div class="empty">📦 No accounts yet<br><small>Click "Import Account" to get started</small></div>\';return}c.innerHTML=accounts.map(a=>{const ac=a.isActive?"active":"";const sb=a.isActive?\'<span class="status-badge">ACTIVE</span>\':"";const ed=a.email?\'<div class="card-email">📧 \'+a.email+"</div>":"";return\'<div class="card \'+ac+\'" onclick="switchAccount(\\\'\'+a.id+\'\\\')"><div class="card-header"><span class="card-name">\'+a.name+"</span>"+sb+\'</div>\'+ed+\'<div class="card-actions" onclick="event.stopPropagation()"><button class="secondary" onclick="renameAccount(\\\'\'+a.id+\'\\\')">Rename</button><button class="danger" onclick="deleteAccount(\\\'\'+a.id+\'\\\')">Delete</button></div></div>\'}).join("")}function importAccount(){vscode.postMessage({cmd:"import"})}function switchAccount(id){vscode.postMessage({cmd:"switch",id:id})}function deleteAccount(id){vscode.postMessage({cmd:"delete",id:id})}function renameAccount(id){const a=accounts.find(x=>x.id===id);const n=prompt("New name:",a?a.name:"");if(n&&a&&n!==a.name){vscode.postMessage({cmd:"rename",id:id,name:n})}}</script></body></html>';
+        return '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:var(--vscode-font-family);color:var(--vscode-foreground);background:var(--vscode-sideBar-background);padding:16px}h2{font-size:16px;margin-bottom:12px;font-weight:600}.search-box{width:100%;padding:8px 12px;margin-bottom:16px;background:var(--vscode-input-background);color:var(--vscode-input-foreground);border:1px solid var(--vscode-input-border);border-radius:4px;font-size:13px}.search-box:focus{outline:none;border-color:var(--vscode-focusBorder)}button{background:var(--vscode-button-background);color:var(--vscode-button-foreground);border:none;padding:8px 16px;border-radius:4px;cursor:pointer;font-size:13px;margin:4px 4px 4px 0;transition:background .2s}button:hover{background:var(--vscode-button-hoverBackground)}button.secondary{background:var(--vscode-button-secondaryBackground);color:var(--vscode-button-secondaryForeground)}button.danger{background:#f14c4c;color:#fff}.card{background:var(--vscode-sideBar-dropBackground);border:1px solid var(--vscode-panel-border);border-left:3px solid;border-radius:6px;padding:12px;margin:8px 0;cursor:pointer;transition:all .2s;position:relative}.card:hover{background:var(--vscode-list-hoverBackground);transform:translateX(2px)}.card.active{border-left-width:4px;background:var(--vscode-list-activeSelectionBackground);box-shadow:0 2px 8px rgba(0,0,0,0.15)}.card-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}.card-name{font-weight:600;font-size:14px}.card-email{font-size:12px;color:var(--vscode-descriptionForeground);margin-bottom:6px}.card-meta{display:flex;gap:8px;align-items:center;font-size:11px;color:var(--vscode-descriptionForeground);margin-bottom:8px}.card-actions{display:flex;gap:4px;margin-top:8px;flex-wrap:wrap}.status-badge{font-size:10px;padding:2px 8px;border-radius:12px;background:var(--vscode-badge-background);color:var(--vscode-badge-foreground)}.tag-badge{font-size:10px;padding:2px 6px;border-radius:4px;background:rgba(var(--tag-rgb),0.2);color:var(--vscode-foreground);border:1px solid rgba(var(--tag-rgb),0.4)}.empty{text-align:center;padding:32px 16px;color:var(--vscode-descriptionForeground)}.info{background:var(--vscode-textCodeBlock-background);border-left:3px solid var(--vscode-focusBorder);padding:12px;border-radius:4px;font-size:12px;margin-bottom:16px}.stats{display:flex;gap:4px;font-size:10px;color:var(--vscode-descriptionForeground)}.hidden{display:none!important}</style></head><body><h2>🔄 Codex Account Switcher v2.0</h2><div class="info">Manage multiple ChatGPT Plus accounts • New: Tags, Search, Stats!</div><input type="text" class="search-box" placeholder="🔍 Search accounts by name, email, or tag..." onkeyup="filterAccounts(this.value)"><button onclick="importAccount()">➕ Import Account</button><div id="accounts"></div><script>const vscode=acquireVsCodeApi();let accounts=[];let filteredAccounts=[];window.addEventListener("message",e=>{accounts=e.data.accounts||[];filteredAccounts=accounts;renderAccounts()});function filterAccounts(query){const q=query.toLowerCase();filteredAccounts=accounts.filter(a=>a.name.toLowerCase().includes(q)||((a.email||"").toLowerCase().includes(q))||((a.tag||"").toLowerCase().includes(q)));renderAccounts()}function renderAccounts(){const c=document.getElementById("accounts");if(!filteredAccounts.length){if(accounts.length){c.innerHTML=\'<div class="empty">🔍 No accounts match your search</div>\'}else{c.innerHTML=\'<div class="empty">📦 No accounts yet<br><small>Click "Import Account" to get started</small></div>\'}return}c.innerHTML=filteredAccounts.map(a=>{const ac=a.isActive?"active":"";const sb=a.isActive?\'<span class="status-badge">ACTIVE</span>\':"";const ed=a.email?\'<div class="card-email">📧 \'+a.email+"</div>":"";const tag=a.tag?\'<span class="tag-badge">🏷️ \'+a.tag+"</span>":"";const usage=a.usageCount?\'<span class="stats">🔄 \'+a.usageCount+" uses</span>":"";const lastUsed=a.lastUsedText?\'<span class="stats">🕐 \'+a.lastUsedText+"</span>":"";const borderColor=a.color||"#007ACC";return\'<div class="card \'+ac+\'" style="border-left-color:\'+borderColor+\'" onclick="switchAccount(\\\'\'+a.id+\'\\\')"><div class="card-header"><span class="card-name">\'+a.name+"</span>"+sb+\'</div>\'+ed+\'<div class="card-meta">\'+tag+usage+lastUsed+\'</div><div class="card-actions" onclick="event.stopPropagation()"><button class="secondary" onclick="changeTag(\\\'\'+a.id+\'\\\')">🏷️ Tag</button><button class="secondary" onclick="renameAccount(\\\'\'+a.id+\'\\\')">✏️ Rename</button><button class="danger" onclick="deleteAccount(\\\'\'+a.id+\'\\\')">🗑️ Delete</button></div></div>\'}).join("")}function importAccount(){vscode.postMessage({cmd:"import"})}function switchAccount(id){vscode.postMessage({cmd:"switch",id:id})}function deleteAccount(id){vscode.postMessage({cmd:"delete",id:id})}function renameAccount(id){const a=accounts.find(x=>x.id===id);const n=prompt("New name:",a?a.name:"");if(n&&a&&n!==a.name){vscode.postMessage({cmd:"rename",id:id,name:n})}}function changeTag(id){const tags=["Work","Personal","Client","Testing","Project"];const a=accounts.find(x=>x.id===id);const currentTag=a?a.tag:"Personal";const newTag=prompt("Choose tag ("+tags.join(", ")+"):",currentTag);if(newTag&&tags.includes(newTag)){vscode.postMessage({cmd:"updateTag",id:id,tag:newTag})}}</script></body></html>';
     }
 }
 
@@ -332,6 +473,7 @@ cat > media/icon.svg << 'SVG'
   <circle cx="45" cy="45" r="30" fill="#007ACC" opacity="0.8"/>
   <circle cx="83" cy="83" r="30" fill="#68217A" opacity="0.8"/>
   <path d="M 64 30 A 20 20 0 1 1 64 98" stroke="white" stroke-width="4" fill="none"/>
+  <circle cx="64" cy="20" r="6" fill="#FFD700"/>
 </svg>
 SVG
 
@@ -344,7 +486,7 @@ npm install -g @vscode/vsce --silent 2>&1 || true
 echo "🔨 Building extension..."
 npm run compile 2>&1 | grep -E "ERROR|WARNING" || echo "✓ Compiled successfully"
 
-echo "📦 Packaging extension..."
+echo "📦 Packaging v2.0..."
 vsce package --no-yarn 2>&1 || npx @vscode/vsce package --no-yarn 2>&1
 
 VSIX_FILE=$(ls *.vsix 2>/dev/null | head -1)
@@ -352,22 +494,30 @@ VSIX_FILE=$(ls *.vsix 2>/dev/null | head -1)
 if [ -n "$VSIX_FILE" ]; then
     cp "$VSIX_FILE" ~/
     echo ""
-    echo "✅ Extension packaged: ~/$VSIX_FILE"
+    echo "✅ Extension v2.0 packaged: ~/$VSIX_FILE"
     
     if command -v code &>/dev/null; then
         echo "🚀 Installing in VS Code..."
         code --install-extension ~/"$VSIX_FILE" --force 2>&1
         echo ""
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        echo "✅ Installation complete!"
+        echo "✅ Codex Account Switcher v2.0 installed!"
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         echo ""
-        echo "🎉 Next Steps:"
-        echo "   1. Open VS Code (or reload if already open)"
-        echo "   2. Click the Codex icon in the Activity Bar"
-        echo "   3. Click '➕ Import Account'"
-        echo "   4. Select your auth.json files"
-        echo "   5. Switch accounts with one click!"
+        echo "🎉 What's New in v2.0:"
+        echo "   ✨ Status bar shows active account"
+        echo "   🏷️ Color-coded tags for organization"
+        echo "   🔍 Search & filter accounts"
+        echo "   🕐 Last used timestamps"
+        echo "   📊 Usage statistics"
+        echo "   ⚡ Quick switch command (Cmd+Shift+P)"
+        echo ""
+        echo "📖 Next Steps:"
+        echo "   1. Look for 'Codex Switcher' in Activity Bar"
+        echo "   2. Import your accounts"
+        echo "   3. Add tags to organize"
+        echo "   4. Use search to find accounts quickly"
+        echo "   5. Check status bar for active account"
         echo ""
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     else
