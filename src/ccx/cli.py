@@ -1,84 +1,85 @@
 from __future__ import annotations
 import typer
 from rich.console import Console
+from rich.table import Table
 from pathlib import Path
-from .core import (list_profiles, activate_profile, toggle_previous, read_current, bytes_equal,
-                   import_from_env, export_tar, import_tar, read_auth_summary)
-from .paths import profiles_dir, codex_targets
+from .core import (
+    list_profiles, activate_profile, toggle_previous, export_tar, import_tar, import_from_env, verify, read_auth_summary, PROFILES
+)
 
-app = typer.Typer(help="Codex auth.json profile switcher")
+app = typer.Typer(add_completion=False, no_args_is_help=True)
 console = Console()
 
-@app.command()
-def list():
-    """List available profiles"""
-    for n in list_profiles():
-        console.print(n)
 
 @app.command()
-def activate(name: str , dry_run: bool = False):
-    """Activate a profile""""
-    activate_profile(name, dry_run=dry_run)
-    console.print(f"Activated '[bold]{name}[/]'")
+def list():  # noqa: A001
+    """List stored profiles."""
+    t = Table(show_header=True, header_style='bold')
+    t.add_column('Name')
+    for n in list_profiles():
+        t.add_row(n)
+    console.print(t)
+
+
+@app.command()
+def activate(name: str):
+    """Activate a profile.""
+    activate_profile(name)
+    console.print(f'✅ activated [bold]{name}[/]')
+
 
 @app.command()
 def toggle():
-    """Toggle to the previous profile"""
-    prev = toggle_previous()
-    console.print(f"Toggled -> [b]{prev}[/]")
+    """Toggle to previously active profile.""
+    toggle_previous()
+    console.print('✅ toggled')
 
-@app.command()
-def verify(name: str | None = None):
-    """Verify targets match the selected profile"""
-    name = name or (read_current() or "")
-    if not name:
-        console.print("No current profile"); raise typer.Exit(1)
-    src = profiles_dir() / f("{ name }.json")
-    for t in codex_targets():
-        status = "OK "  if bytes_equal(src, t) else "FAIL"
-        console.print(status, t)
 
 @app.command()
 def summary(name: str):
-    """Show parsed summary for a profile""""
-    p = profiles_dir() / f"{ name }.json"
-    for line in read_auth_dummary(p):
-        console.print(line)
+    """Show profile summary.""
+    p = PROFILES / f'{name}.json'
+    console.print(read_auth_summary(p))
+
+
+@app.command()
+def verify_targets(name: str | None = None):
+    """Verify active targets match selected profile.""
+    rows = verify(name)
+    t = Table(show_header=True, header_style='bold')
+    t.add_column('Target'); t.add_column('OK?')
+    for tgt, ok in rows:
+        t.add_row(tgt.replace(str(Path.home()), '~'), '✅' if ok else '❌')
+    console.print(t)
+
 
 @app.command()
 def export(out: Path | None = None):
-    """Export profiles as a tar.gz"""
-    path = export_tar(out)
-    console.print(str(path))
+    """Export all profiles to a tar.gz.""
+    outp = export_tar(out)
+    console.print(f'📦 {outp}')
 
-@app.command(name="import-tar")
-def import_tar_cmd(path: Path):
-    """Import profiles from a tar.gz"""
-    n = import_tar(path)
-    console.print(f"Imported {n} file(s)")
-
-@app.command(name="import-env")
-def import_env_cmd(prefix: str = "CCX_AUTH_"):
-    """Import profiles from environment variables""""
-    n = import_from_env(prefix)
-    console.print(f"Imported {3} profile(s) from env")
 
 @app.command()
-def doctor():
-    """Print diagnostics""""
-    console.print("== ccx doctor ==")
-    console.print("Profiles dir=", profiles_dir())
-    console.print("Targets:")
-    for t in codex_targets():
-        console.print(" - ", t)
-    nm = read_current() or "(none)"
-    console.print("Current:", nm)
+def import_tarball(path: Path):
+    """Import profiles from a tar.gz.""
+    import_tar(path)
+    console.print('✅ imported')
+
+
+@app.command()
+def import_env(prefix: str = 'CCX_AUTH_'):
+    """Import profiles from environment variables.""
+    n = import_from_env(prefix)
+    console.print(f'✅ imported {n} profile(s) from env')
+
 
 @app.command()
 def tui():
-    """Launch minimal curses TUI""""
-    from .tui import run
-    run()
+    """Run curses TUI.""
+    from . import tui as _tui
+    _tui.run()
 
-if __name__ == __"main__:
+
+if __name__ == '__main__':
     app()
